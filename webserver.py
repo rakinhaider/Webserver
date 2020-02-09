@@ -6,7 +6,6 @@ import re
 from datetime import datetime
 
 
-
 class HTTPRequest():
     def __init__(self, request):
         self.method, self.url, self.version, self.header_items, self.body = self.parse_http_request(request)
@@ -91,8 +90,10 @@ class HTTPResponse():
 
     def __init__(self, request):
         self.request = request
+        self.status_code = None
 
     def get_status_message(self, status_code):
+        # print status_code
         if status_code == 200:
             return 'OK'
         elif status_code == 301:
@@ -111,7 +112,7 @@ class HTTPResponse():
     def get_content_type(self, url, accepts):
         _, file_extension = os.path.splitext(url)
         file_extension = file_extension[1:]
-        print(file_extension)
+        # print(file_extension)
         subtype = file_extension
         if file_extension in ['txt']:
             type = 'text/'
@@ -124,44 +125,26 @@ class HTTPResponse():
             type = 'image/'
         elif file_extension in ['pdf']:
             type = 'application/'
-        print(accepts)
+        # print(accepts)
         return type + subtype
 
     def get_response_line(self, status_code):
         return self.request.version + ' ' + str(status_code) + ' ' + self.get_status_message(status_code) + '\r\n'
 
-    def get_response_header(self, status_code):
+    def get_response_header(self):
         header = 'Date: ' + str(datetime.now()) + self.LINE_SEPARATOR
         header += 'Server: ' + os.name + '/' + platform.release() + ' (' + platform.system() + ')' + self.LINE_SEPARATOR
         request = self.request
-        if status_code == 200:
+        if self.status_code == 200:
             header += 'Last-Modified: ' + str(os.path.getmtime(self.BASE_FOLDER + request.url)) + self.LINE_SEPARATOR
             header += 'Content-Length: ' + str(os.path.getsize(self.BASE_FOLDER + request.url)) + self.LINE_SEPARATOR
             header += 'Content-Type: ' + self.get_content_type(request.url, request.header_items[self.ACCEPT]) +\
                       self.LINE_SEPARATOR
+        header += 'Connection: closed' + self.LINE_SEPARATOR
+        header += self.LINE_SEPARATOR
         return header
 
-    def get_response_body(self, status_code):
-        if status_code == 404:
-            url = '/404_not_found.html'
-        elif status_code == 403:
-            url = '/403_forbidden.html'
-        elif status_code == 400:
-            url = '/400_bad_request.html'
-        elif self.request.url == '/':
-            url = '/index.html'
-        else:
-            url = self.request.url
-        try:
-            f = open(self.BASE_FOLDER + url, 'r')
-            str = ''
-            for line in f:
-                str += line
-        except:
-            return '', True
-        return str, False
-
-    def get_response(self):
+    def check_error(self):
         status_code = 200
         if self.request.is_bad():
             status_code = 400
@@ -173,17 +156,44 @@ class HTTPResponse():
                 status_code = 403
         elif self.request.version not in self.SUPPORTED_VERSIONS:
             status_code = 505
+        self.status_code = status_code
+        print self.status_code
 
-        body, error = self.get_response_body(status_code)
-        if error:
-            status_code = 500
-        header= self.get_response_header(status_code)
+    def send_response_line(self, client_sock):
+        if self.status_code == None:
+            self.check_error()
+        # print 'sending request line'
+        success = client_sock.sendall(self.request.version + ' ' + str(self.status_code)
+                            + ' ' + self.get_status_message(self.status_code) + '\r\n')
 
-        response = self.get_response_line(status_code)
-        response += header
-        response += '\r\n'
-        response += body
-        return response
+        # if success is None:
+            # print 'request line sent successfully'
+
+    def send_response_header(self, client_sock):
+        success = client_sock.sendall(self.get_response_header())
+        # if success is None:
+            # print 'header sent successfully'
+
+    def send_response_body(self, client_sock):
+        if self.status_code == 404:
+            url = '/404_not_found.html'
+        elif self.status_code == 403:
+            url = '/403_forbidden.html'
+        elif self.status_code == 400:
+            url = '/400_bad_request.html'
+        elif self.request.url == '/':
+            url = '/index.html'
+        else:
+            url = self.request.url
+        f = open(self.BASE_FOLDER + url)
+        # print 'sending body'
+        # overall_success = True
+        for line in f:
+            success = client_sock.sendall(line)
+            # if success is not None:
+                # overall_success = False
+        # if overall_success:
+            # print 'Body sent successfully'
 
 
 if __name__ == "__main__":
@@ -199,12 +209,12 @@ if __name__ == "__main__":
 
     is_parent = 1
 
+    # if True:
     while True:
-        print 'parent accepting'
+        # print 'parent accepting'
         client_sock, addr = server_sock.accept()
         is_parent = os.fork()
         if is_parent == 0:
-            print 'child_pid', os.getpid()
             request = ''
             while True:
                 buffer = client_sock.recv(1024)
@@ -214,16 +224,19 @@ if __name__ == "__main__":
                     break
 
             http_request = HTTPRequest(request)
+            print 'child_pid', os.getpid(), ' serving ', http_request.url
+            print http_request
             response = HTTPResponse(http_request)
-            response = response.get_response()
-            print response
-            client_sock.sendall(response)
+            response.check_error()
+            response.send_response_line(client_sock)
+            response.send_response_header(client_sock)
+            response.send_response_body(client_sock)
+            client_sock.shutdown(socket.SHUT_RDWR)
             client_sock.close()
             break
-        else:
-            print 'parent_pid', os.getpid()
 
-    # if is_parent != 0:
-        # server_sock.close()
+
+    if is_parent != 0:
+        server_sock.close()
     if is_parent == 0:
-        print 'child process closing'
+        print 'Child PID ', os.getpid(), ' served ', http_request.url
