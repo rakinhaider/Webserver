@@ -1,10 +1,20 @@
 import socket
 import sys
+from http_response import HTTPResponse
+
+def store_file(body, url):
+    file_name = url.split('/')[-1]
+
+    f = open('Download/' + file_name, 'r')
+    f.write(body)
+    f.close()
+
+
 if __name__ == "__main__":
 
     server_name = socket.gethostname()
     server_port = 3000
-    file_name = '/index.html'
+    file_name = 'big_text3.txt'
     if len(sys.argv) > 1:
         server_name = sys.argv[1]
         server_port = int(sys.argv[2])
@@ -13,7 +23,7 @@ if __name__ == "__main__":
     client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     client_sock.connect((socket.gethostbyname(server_name), server_port))
-    request = 'GET '+ file_name + ' HTTP/1.1\r\n' \
+    request = 'GET /'+ file_name + ' HTTP/1.1\r\n' \
               + 'Host: 127.0.1.1:3000\r\n' \
               + 'User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:72.0) Gecko/20100101 Firefox/72.0\r\n' \
               + 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8\r\n' \
@@ -22,10 +32,7 @@ if __name__ == "__main__":
 
     client_sock.sendall(request)
 
-    while True:
-        buffer = client_sock.recv(1024)
-        # print buffer
-        if len(buffer) == 0:
-            break
-
+    response = HTTPResponse()
+    response.receive(client_sock, file_name=file_name)
+    print response
     client_sock.close()
