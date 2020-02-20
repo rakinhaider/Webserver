@@ -3,15 +3,15 @@ import platform
 from datetime import datetime
 import re
 
-
 class HTTPResponse:
     BASE_FOLDER = 'Upload'
     DEFAULT_HTTP_VERSION = 'HTTP/1.1'
     SUPPORTED_VERSIONS = ['HTTP/1.0', 'HTTP/1.1']
     ACCEPT = 'Accept'
     LINE_SEPARATOR = '\r\n'
-    CONTENT_DESPOSITION = 'Content-Desposition'
+    CONTENT_DISPOSITION = 'Content-Disposition'
     BIG_FILE_SIZE = 20000000
+    ERROR_HTML = '<!doctype html><html><head><title><status_code> <status_msg>!</title></head><body><p><status_code> <status_msg></p></body></html>'
 
     def __init__(self, request=None, response_str=None):
         self.request = request
@@ -50,6 +50,8 @@ class HTTPResponse:
         file_extension = file_extension[1:]
         # print(file_extension)
         subtype = file_extension
+        if subtype is None or subtype == '':
+            return 'application/octet-stream'
         if file_extension in ['txt']:
             type = 'text/'
             subtype = 'plain'
@@ -78,8 +80,8 @@ class HTTPResponse:
             content_type = self.get_content_type(request.url, request.header_items[self.ACCEPT])
             header += 'Content-Type: ' + content_type +\
                       self.LINE_SEPARATOR
-            if content_type not in ['text/html', 'text/plain'] or size > self.BIG_FILE_SIZE:
-                header += self.CONTENT_DESPOSITION + ': attachment' + self.LINE_SEPARATOR
+            if (content_type not in ['text/html', 'text/plain']) or size > self.BIG_FILE_SIZE:
+                header += self.CONTENT_DISPOSITION + ': attachment' + self.LINE_SEPARATOR
         header += 'Connection: closed' + self.LINE_SEPARATOR
         header += self.LINE_SEPARATOR
         return header
@@ -92,6 +94,8 @@ class HTTPResponse:
             status_code = 505
         elif self.request.method == 'GET':
             file_path = self.BASE_FOLDER + self.request.url
+            print(file_path)
+            print os.path.exists(file_path)
             if not os.path.exists(file_path):
                 status_code = 404
             elif (os.stat(file_path).st_mode & (1 << 8)) == 0:
@@ -117,24 +121,17 @@ class HTTPResponse:
             # print 'header sent successfully'
 
     def send_response_body(self, client_sock):
-        if self.status_code == 404:
-            url = '/404_not_found.html'
-        elif self.status_code == 403:
-            url = '/403_forbidden.html'
-        elif self.status_code == 400:
-            url = '/400_bad_request.html'
-        elif self.status_code == 505:
-            url = '/505_http_version_not_supported.html'
-        elif self.status_code == 500:
-            url = '/500_internal_server_error.html'
-        elif self.status_code == 200:
-            if self.request.url == '/':
-                url = '/index.html'
-            else:
-                url = self.request.url
+        if self.status_code == 200:
+            url = self.request.url
         else:
-            return ''
-        f = open(self.BASE_FOLDER + url)
+            error_msg = self.ERROR_HTML.replace('<status_code>', str(self.status_code))
+            error_msg = error_msg.replace('<status_msg>', self.get_status_message(self.status_code))
+            client_sock.sendall(error_msg)
+            return
+
+        file_path = self.BASE_FOLDER + url
+        print file_path
+        f = open(file_path, 'r')
         while True:
             buffer = f.read(1024)
             success = client_sock.send(buffer)
@@ -221,7 +218,7 @@ class HTTPResponse:
                 i += 1
             file_name = root + ' (' + str(i) + ')' + ext
 
-        if self.get_header_by_name(self.CONTENT_DESPOSITION) == 'attachment':
+        if self.get_header_by_name(self.CONTENT_DISPOSITION) == 'attachment':
             file_size = int(self.get_header_by_name('Content-Length'))
             downloaded = 0
             f = open(base_folder + file_name, 'w')

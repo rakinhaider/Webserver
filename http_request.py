@@ -9,8 +9,8 @@ class HTTPRequest:
             line_splits = request_line.split(' ')
             method = line_splits[0]
             url = line_splits[1]
-            if url == '/':
-                url = '/index.html'
+            if url.endswith('/'):
+                url += 'index.html'
             version = line_splits[2]
         except:
             return None, None, None
@@ -57,7 +57,8 @@ class HTTPRequest:
     def is_bad(self):
         if self.method is None or self.url is None:
             return True
-        elif self.method not in ['GET', 'POST', 'HEAD', 'PUT', 'DELETE']:
+        # Since only get is implemented other methods('POST', 'HEAD', 'PUT', 'DELETE') are considered Bad Request
+        elif self.method not in ['GET']:
             return True
         elif self.header_items is None or self.body is None:
             return True
