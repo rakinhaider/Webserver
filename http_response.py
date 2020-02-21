@@ -17,8 +17,6 @@ class HTTPResponse:
         self.request = request
         self.response_str = response_str
         self.status_code = None
-        self.method = None
-        self.url = None
         self.header_items = None
         self.body = None
 
@@ -77,7 +75,7 @@ class HTTPResponse:
             header += 'Last-Modified: ' + str(os.path.getmtime(self.BASE_FOLDER + request.url)) + self.LINE_SEPARATOR
             size = os.path.getsize(self.BASE_FOLDER + request.url)
             header += 'Content-Length: ' + str(size) + self.LINE_SEPARATOR
-            content_type = self.get_content_type(request.url, request.header_items[self.ACCEPT])
+            content_type = self.get_content_type(request.url, request.header_items.get(self.ACCEPT))
             header += 'Content-Type: ' + content_type +\
                       self.LINE_SEPARATOR
             if (content_type not in ['text/html', 'text/plain']) or size > self.BIG_FILE_SIZE:
@@ -94,23 +92,28 @@ class HTTPResponse:
             status_code = 505
         elif self.request.method == 'GET':
             file_path = self.BASE_FOLDER + self.request.url
-            print(file_path)
-            print os.path.exists(file_path)
+            # print(file_path)
+            # print os.path.exists(file_path)
             if not os.path.exists(file_path):
                 status_code = 404
             elif (os.stat(file_path).st_mode & (1 << 8)) == 0:
                 status_code = 403
         self.status_code = status_code
-        print self.status_code
+        # print self.status_code
+
+    def get_request_line(self, status_code):
+        return self.request.version + ' ' + str(self.status_code) +\
+               ' ' + self.get_status_message(self.status_code) + '\r\n'
 
     def send_response_line(self, client_sock):
         if self.status_code == None:
             self.check_error()
         if self.request.version is None:
             self.request.version = self.DEFAULT_HTTP_VERSION
-        # print 'sending request line'
-        success = client_sock.sendall(self.request.version + ' ' + str(self.status_code)
-                            + ' ' + self.get_status_message(self.status_code) + '\r\n')
+
+        request_line = self.get_request_line(self.status_code)
+        print request_line
+        success = client_sock.sendall(request_line)
 
         # if success is None:
             # print 'request line sent successfully'
@@ -132,7 +135,7 @@ class HTTPResponse:
             return
 
         file_path = self.BASE_FOLDER + url
-        print file_path
+        # print file_path
         f = open(file_path, 'r')
         while True:
             buffer = f.read(1024)
@@ -157,6 +160,11 @@ class HTTPResponse:
             self.body = None
             self.response_line = None
             self.header_items = None
+
+    def parse_response_line(self):
+        response_line_segments = self.response_line.split(' ')
+        self.version = response_line_segments[0]
+        self.status_code = int(response_line_segments[1])
 
     def parse_header(self, header):
         try:
@@ -195,7 +203,7 @@ class HTTPResponse:
         self.response_line = response[:index]
         self.response_str = self.response_line + self.LINE_SEPARATOR
         response = response[index + 2:]
-        print self.response_line
+        # print self.response_line
         while True:
             buffer = client_sock.recv(1024)
             response += buffer
@@ -210,9 +218,10 @@ class HTTPResponse:
         self.header_items = self.parse_header(response[:index])
         self.response_str += response[:index] + self.LINE_SEPARATOR * 2
         response = response[index + 4:]
-        print self.header_items
+        # print self.header_items
 
         base_folder = 'Download/'
+        file_name = os.path.basename(file_name)
         if os.path.exists(base_folder + file_name):
             root, ext = os.path.splitext(file_name)
             i = 1

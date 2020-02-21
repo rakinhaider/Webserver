@@ -34,8 +34,8 @@ if __name__ == "__main__":
                     break
 
             http_request = HTTPRequest(request=request)
-            print 'child_pid', os.getpid(), ' serving ', http_request.url
-            print http_request
+            # print 'child_pid', os.getpid(), ' serving ', http_request.url
+            # print http_request
             response = HTTPResponse(http_request)
             response.send_response(client_sock)
             client_sock.shutdown(socket.SHUT_RDWR)
@@ -46,4 +46,5 @@ if __name__ == "__main__":
     if is_parent != 0:
         server_sock.close()
     if is_parent == 0:
-        print 'Child PID ', os.getpid(), ' served ', http_request.url
+        # print 'Child PID ', os.getpid(), ' served ', http_request.url
+        pass

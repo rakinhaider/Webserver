@@ -17,12 +17,17 @@ class HTTPRequest:
         return method, url, version
 
     def parse_header(self, header):
+        if header == '':
+            return {}
         try:
             header_lines = header.split('\r\n')
             header_items = {}
             for line in header_lines:
                 splits = line.split(': ')
+                print splits
                 header_items[splits[0]] = splits[1]
+                if len(splits) > 2:
+                    return None
             for header_item in header_items:
                 value = header_items[header_item]
                 if ',' in value:
@@ -40,10 +45,16 @@ class HTTPRequest:
             index = request.index('\r\n')
             request_line = request[:index]
             request = request[index + 2:]
-            index = request.index('\r\n\r\n')
-            header = request[:index]
-            body = request[index + 4:]
+            print request.count('\r\n')
+            if request == '\r\n':
+                header = ''
+                body = ''
+            else:
+                index = request.index('\r\n\r\n')
+                header = request[:index]
+                body = request[index + 4:]
         except:
+            print 'error'
             return request_line, header, body
         return request_line, header, body
 
