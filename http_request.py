@@ -2,21 +2,29 @@ import re
 
 class HTTPRequest:
     def __init__(self, request):
+        # parse the string request and initiate the member variables.
         self.method, self.url, self.version, self.header_items, self.body = self.parse_http_request(request)
 
     def parse_request_line(self, request_line):
+        # Parse request line into three segments.
+        # method, url and version
+        # If any of the segments is not found None is returned
+        method = None
+        url = None
+        version = None
         try:
             line_splits = request_line.split(' ')
             method = line_splits[0]
             url = line_splits[1]
-            if url.endswith('/'):
-                url += 'index.html'
             version = line_splits[2]
         except:
-            return None, None, None
+            return method, url, version
         return method, url, version
 
     def parse_header(self, header):
+        # Parse the header segment into key value pairs
+        # If the header is a empty string,  return empty dictionary
+        # Otherwise, parse each line of the header into key-value pairs.
         if header == '':
             return {}
         try:
@@ -24,10 +32,13 @@ class HTTPRequest:
             header_items = {}
             for line in header_lines:
                 splits = line.split(': ')
-                print splits
                 header_items[splits[0]] = splits[1]
+                # If there are more than two key value pairs in a single line
+                # then the request is not well formed.
                 if len(splits) > 2:
                     return None
+            # some header items have multiple comma seperated values
+            # these values are parsed and converted into a list.
             for header_item in header_items:
                 value = header_items[header_item]
                 if ',' in value:
@@ -38,6 +49,8 @@ class HTTPRequest:
         return header_items
 
     def split_request_segments(self, request):
+        # Parse the request string into three segments.
+        # request_line, header_lines and body.
         request_line = None
         header = None
         body = None
@@ -45,7 +58,9 @@ class HTTPRequest:
             index = request.index('\r\n')
             request_line = request[:index]
             request = request[index + 2:]
-            print request.count('\r\n')
+            # If there are no header lines then
+            # the header string should be exactly equal to '\r\n'
+            # Otherwise there will be atleast one '\r\n\r\n' separating the header from the body
             if request == '\r\n':
                 header = ''
                 body = ''
@@ -54,25 +69,21 @@ class HTTPRequest:
                 header = request[:index]
                 body = request[index + 4:]
         except:
-            print 'error'
             return request_line, header, body
         return request_line, header, body
 
     def parse_http_request(self, request):
+        # Parse the request string
         request_line, header, body = self.split_request_segments(request)
-        # print 'request_line', request_line
         method, url, version = self.parse_request_line(request_line)
-        # print method, url, version
-        # print 'header', header
         header_items = self.parse_header(header)
-        # print header_items
-        # print 'body', body
         return method, url, version, header_items, body
 
     def is_bad(self):
+        # Check whether the request is a bad request
         if self.method is None or self.url is None:
             return True
-        # Since only get is implemented other methods('POST', 'HEAD', 'PUT', 'DELETE') are considered Bad Request
+        # Since only GET is implemented other methods('POST', 'HEAD', 'PUT', 'DELETE') are considered Bad Request
         elif self.method not in ['GET']:
             return True
         elif self.header_items is None or self.body is None:

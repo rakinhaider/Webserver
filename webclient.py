@@ -6,9 +6,13 @@ def run_client(server_name, server_port, file_name, request=None):
     client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     client_sock.connect((socket.gethostbyname(server_name), server_port))
+    # Remove / prefix from file_name
+    # If the given file_name is of the form /index.html it will convert it to index.html
     if file_name.startswith('/'):
         file_name = file_name[1:]
 
+    # If request is not passed as the parameter,
+    # the default request will be used.
     if request is None:
         request = 'GET /' + file_name + ' HTTP/1.1\r\n' \
                   + 'Host: 127.0.1.1:3000\r\n' \
