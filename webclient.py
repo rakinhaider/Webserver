@@ -2,24 +2,7 @@ import socket
 import sys
 from http_response import HTTPResponse
 
-def store_file(body, url):
-    file_name = url.split('/')[-1]
-
-    f = open('Download/' + file_name, 'r')
-    f.write(body)
-    f.close()
-
-
-if __name__ == "__main__":
-
-    server_name = socket.gethostname()
-    server_port = 3000
-    file_name = 'big_text3.txt'
-    if len(sys.argv) > 1:
-        server_name = sys.argv[1]
-        server_port = int(sys.argv[2])
-        file_name = sys.argv[3]
-
+def run_client(server_name, server_port, file_name):
     client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     client_sock.connect((socket.gethostbyname(server_name), server_port))
@@ -36,3 +19,16 @@ if __name__ == "__main__":
     response.receive(client_sock, file_name=file_name)
     print response
     client_sock.close()
+
+
+if __name__ == "__main__":
+
+    server_name = socket.gethostname()
+    server_port = 3000
+    file_name = 'big_text3.txt'
+    if len(sys.argv) > 1:
+        server_name = sys.argv[1]
+        server_port = int(sys.argv[2])
+        file_name = sys.argv[3]
+
+    run_client(server_name, server_port, file_name)

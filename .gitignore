@@ -1,5 +1,7 @@
 Upload/*
 Computer_Networking_A_Top-Down_Approach.pdf
 .idea/*
-http_request.pyc http_response.pyc webserver.pyc
+http_request.pyc
+http_response.pyc
+webserver.pyc
 Download/

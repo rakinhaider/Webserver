@@ -106,6 +106,8 @@ class HTTPResponse:
     def send_response_line(self, client_sock):
         if self.status_code == None:
             self.check_error()
+        if self.request.version is None:
+            self.request.version = self.DEFAULT_HTTP_VERSION
         # print 'sending request line'
         success = client_sock.sendall(self.request.version + ' ' + str(self.status_code)
                             + ' ' + self.get_status_message(self.status_code) + '\r\n')

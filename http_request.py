@@ -33,14 +33,18 @@ class HTTPRequest:
         return header_items
 
     def split_request_segments(self, request):
+        request_line = None
+        header = None
+        body = None
         try:
-            request_splits = request.split('\r\n\r\n')
-            body = request_splits[1]
-            index = request_splits[0].index('\r\n')
-            request_line = request_splits[0][:index]
-            header = request_splits[0][index + 2:]
+            index = request.index('\r\n')
+            request_line = request[:index]
+            request = request[index + 2:]
+            index = request.index('\r\n\r\n')
+            header = request[:index]
+            body = request[index + 4:]
         except:
-            return None, None, None
+            return request_line, header, body
         return request_line, header, body
 
     def parse_http_request(self, request):
@@ -64,12 +68,16 @@ class HTTPRequest:
             return True
 
     def __str__(self):
-        string = 'Method ' + self.method + ' ' + \
-                'Url ' + self.url + ' ' + \
-                'Version ' + self.version + ' ' + \
-                'Header ' + str(self.header_items) + ' '
-        if self.body is not None:
-            string += 'Body ' + self.body
+        try:
+            string = 'Method ' + self.method + ' ' + \
+                    'Url ' + self.url + ' ' + \
+                    'Version ' + self.version + ' '
+            if self.header_items is None:
+                string += 'Header ' + str(self.header_items) + ' '
+            if self.body is not None:
+                string += 'Body ' + self.body
+        except:
+            return 'Bad Request'
         return string
 
     def __repr__(self):
