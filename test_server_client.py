@@ -86,18 +86,20 @@ class TestServerClient(unittest.TestCase):
 
     def test_multiple_request(self):
         pid_list = []
+        is_parent = True
         for i in range(0, 5):
             pid = os.fork()
-            assert run_client(self.SERVER_NAME, self.SERVER_PORT, 'big_text.txt') == 200
             if pid == 0:
+                assert run_client(self.SERVER_NAME, self.SERVER_PORT, 'big_text.txt') == 200
+                is_parent = False
                 break
             else:
                 pid_list.append(pid)
 
-        for pid in pid_list:
-            pid, status = os.waitpid(pid, 0)
-            assert status == 0
-
+        if is_parent:
+            for pid in pid_list:
+                pid, status = os.waitpid(pid, 0)
+                assert status == 0
 
 if __name__ == '__main__':
     if len(sys.argv) == 3:

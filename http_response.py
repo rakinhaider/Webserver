@@ -256,6 +256,7 @@ class HTTPResponse:
             while True:
                 buffer = client_sock.recv(1024)
                 f.write(buffer)
+                f.flush()
                 downloaded += len(buffer)
                 print '\rDownloading', downloaded * 100.0 / file_size, '%',
                 if len(buffer) == 0:
