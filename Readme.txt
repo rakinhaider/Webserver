@@ -1,4 +1,4 @@
-- Both the webserver and webclient are implemented.
+- A webserver and a webclient are implemented.
 - If / is requested,
     The server tries find the file Upload/index.html
 - If webserver.pdf is requested,
