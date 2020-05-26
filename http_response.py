@@ -2,6 +2,7 @@ import os
 import platform
 from datetime import datetime
 import re
+import socket
 
 class HTTPResponse:
     SERVER_ROOT = 'Upload'
@@ -17,36 +18,71 @@ class HTTPResponse:
     def __init__(self, request=None, response_str=None):
         self.request = request
         self.response_str = response_str
-        self.status_code = None
-        self.header_items = None
-        self.body = None
+        if request is not None:
+            self.request_url = self.resolve_url(request)
+            self.version = self.get_response_version(request)
+            self.status_code = self.check_error(request)
+            self.header_items = self.prep_resp_header_items(request)
+            self.body = self.prep_resp_body()
+
+        elif self.response_str is not None:
+            self.version = None
+            self.status_code = None
+            self.header_items = None
+            self.body = None
 
     def __str__(self):
-        if self.response_str is not None:
-            return self.response_str
+        if self.status_code is None:
+            return ''
+        s = self.prep_response_line()
+        s += self.prep_header()
+        if not self.is_attachment(self.header_items):
+            s += self.body
         else:
-            pass
+            s += 'Attachment Received.' \
+                 ' Stored at ' + self.stored_path
+        return s
 
-    def get_status_message(self, status_code):
-        if status_code == 200:
+    def is_attachment(self, header_items):
+        text_file_types = ['text/html', 'text/plain']
+        if self.status_code != 200:
+            return False
+        if header_items['Content-Type'] not in text_file_types:
+            return True
+        elif int(header_items['Content-Length']) > self.BIG_FILE_SIZE:
+            return True
+        else:
+            return False
+
+    def get_response_version(self, request):
+        if request.version is not None:
+            return request.version
+        else:
+            return self.DEFAULT_HTTP_VERSION
+
+    def get_status_message(self):
+        if self.status_code == 200:
             return 'OK'
-        elif status_code == 301:
+        elif self.status_code == 301:
             return 'Moved Parmanently'
-        elif status_code == 400:
+        elif self.status_code == 400:
             return 'Bad Request'
-        elif status_code == 403:
+        elif self.status_code == 403:
             return 'Forbidden'
-        elif status_code == 404:
+        elif self.status_code == 404:
             return 'Not Found'
-        elif status_code == 500:
+        elif self.status_code == 500:
             return 'Internal Server Error'
-        elif status_code == 505:
+        elif self.status_code == 505:
             return 'HTTP Version Not Supported'
 
-    def get_content_type(self, url, accepts):
+    def get_content_type(self, request):
         # Split the file name and extension.
         # Based on the extension return the content type
         # If no extension is found, use 'application/octet-stream'
+        url = self.request_url
+        accepts = request.header_items.get(self.ACCEPT)
+
         _, file_extension = os.path.splitext(url)
         file_extension = file_extension[1:]
         subtype = file_extension
@@ -63,44 +99,33 @@ class HTTPResponse:
             type = 'image/'
         elif file_extension in ['pdf']:
             type = 'application/'
+        else:
+            return 'application/octet-stream'
         return type + subtype
 
-    def get_response_header(self):
-        header = 'Date: ' + str(datetime.now()) + self.LINE_SEPARATOR
-        header += 'Server: ' + os.name + '/' + platform.release() + ' (' + platform.system() + ')' + self.LINE_SEPARATOR
-        request = self.request
-        # If the status code is 200
-        # Append Last-Modified, Content-Length and Content-Type with the header.
-        if self.status_code == 200:
-            header += 'Last-Modified: ' + str(os.path.getmtime(self.SERVER_ROOT + request.url)) + self.LINE_SEPARATOR
-            size = os.path.getsize(self.SERVER_ROOT + request.url)
-            header += 'Content-Length: ' + str(size) + self.LINE_SEPARATOR
-            content_type = self.get_content_type(self.resolve_url(), request.header_items.get(self.ACCEPT))
-            header += 'Content-Type: ' + content_type +\
-                      self.LINE_SEPARATOR
-            if (content_type not in ['text/html', 'text/plain']) or size > self.BIG_FILE_SIZE:
-                header += self.CONTENT_DISPOSITION + ': attachment' + self.LINE_SEPARATOR
-        header += 'Connection: closed' + self.LINE_SEPARATOR
-        header += self.LINE_SEPARATOR
-        return header
+    def get_server_name(self):
+        sname = os.name + '/' + platform.release()
+        sname += ' (' + platform.system() + ')'
+        return sname
 
-    def check_error(self):
+    def check_error(self, request):
         status_code = 200
-        if self.request.is_bad():
+        if request.is_bad():
             status_code = 400
-        elif self.request.version not in self.SUPPORTED_VERSIONS:
+        elif request.version not in self.SUPPORTED_VERSIONS:
             status_code = 505
-        elif self.request.method == 'GET':
-            file_path = self.resolve_url()
+        elif request.method == 'GET':
+            file_path = self.request_url
             if not os.path.exists(file_path):
                 status_code = 404
-            # Testing whether the real permission not set. In that case the file is forbidden.
+            # Testing whether the real permission not set.
+            # In that case the file is forbidden.
             elif (os.stat(file_path).st_mode & (1 << 8)) == 0:
                 status_code = 403
-        self.status_code = status_code
+        return status_code
 
-    def resolve_url(self):
-        file_path = self.SERVER_ROOT + self.request.url
+    def resolve_url(self, request):
+        file_path = self.SERVER_ROOT + request.url
 
         if os.path.isdir(file_path):
             if file_path.endswith('/'):
@@ -110,53 +135,85 @@ class HTTPResponse:
 
         return file_path
 
-    def get_response_line(self, status_code):
-        return self.request.version + ' ' + str(self.status_code) +\
-               ' ' + self.get_status_message(self.status_code) + self.LINE_SEPARATOR
+    def prep_response_line(self):
+        resp_line = self.version + ' '
+        resp_line += str(self.status_code) + ' '
+        resp_line += self.get_status_message()
+        resp_line += self.LINE_SEPARATOR
+        return resp_line
+
+    def prep_resp_header_items(self, request):
+        header_items = {}
+        header_items['Date'] = datetime.now()
+        header_items['Server'] = self.get_server_name()
+        # If the status code is 200,
+        # append Last-Modified, Content-Length
+        # and Content-Type with the header.
+        if self.status_code == 200:
+            header_items['Last-Modified'] = os.path.getmtime(self.request_url)
+            size = os.path.getsize(self.request_url)
+            header_items['Content-Length'] = size
+            content_type = self.get_content_type(request)
+            header_items['Content-Type'] = content_type
+            if self.is_attachment(header_items):
+                header_items[self.CONTENT_DISPOSITION] = 'attachment'
+        header_items['Connection'] = 'closed'
+        return header_items
+
+    def prep_header(self):
+        header = ''
+        for item in self.header_items:
+            header += item + ': ' + str(self.header_items[item])
+            header += self.LINE_SEPARATOR
+        header += self.LINE_SEPARATOR
+        return header
+
+    def prep_resp_body(self):
+        if self.status_code != 200:
+            return self.prep_error_msg()
+        elif not self.is_attachment(self.header_items):
+            text = ''
+            for line in _read_file(self.request_url):
+                text += line
+            return text
+        else:
+            return None
+
+    def prep_error_msg(self):
+        error_msg = self.ERROR_HTML
+        error_msg = error_msg.replace('<status_code>', str(self.status_code))
+        status_msg = self.get_status_message()
+        error_msg = error_msg.replace('<status_msg>', status_msg)
+        return error_msg
 
     def send_response_line(self, client_sock):
-        if self.status_code == None:
-            self.check_error()
-        if self.request.version is None:
-            self.request.version = self.DEFAULT_HTTP_VERSION
-
-        response_line = self.get_response_line(self.status_code)
+        response_line = self.prep_response_line()
         print response_line
         success = client_sock.sendall(response_line)
 
     def send_response_header(self, client_sock):
-        header = self.get_response_header()
+        header = self.prep_header()
         print header
         success = client_sock.sendall(header)
 
     def send_response_body(self, client_sock):
-        # If the status code is 200
-        # the corresponding file is read
-        # Otherwise and html containing the error message is sent.
-        if self.status_code == 200:
-            url = self.request.url
+        # If the body is empty (the file is big or attachment),
+        # read the file in chucks and send.
+        # Otherwise, send the text in the body.
+        if self.body is not None:
+            client_sock.sendall(self.body)
         else:
-            error_msg = self.ERROR_HTML.replace('<status_code>', str(self.status_code))
-            error_msg = error_msg.replace('<status_msg>', self.get_status_message(self.status_code))
-            client_sock.sendall(error_msg)
-            return
-
-        file_path = self.resolve_url()
-        f = open(file_path, 'r')
-        while True:
-            buffer = f.read(1024)
-            success = client_sock.send(buffer)
-            if len(buffer) < 1024:
-                break
+            file_path = self.request_url
+            for buffer in _read_file(file_path):
+                success = client_sock.send(buffer)
 
     def send_response(self, client_sock):
-        # Check error and then send the response_line, header and the body sequentially
-        self.check_error()
+        # Send the response_line, header and the body sequentially
         self.send_response_line(client_sock)
         self.send_response_header(client_sock)
         self.send_response_body(client_sock)
 
-    def parse_response(self):
+    def parse_resp_str(self):
         # This is used by the client to parse the received response.
         try:
             segments = self.response_str.split('\r\n\r\n')
@@ -169,11 +226,12 @@ class HTTPResponse:
             self.response_line = None
             self.header_items = None
 
-    def parse_response_line(self):
+    def parse_resp_line(self, response_line):
         # Parse the response line to get the version and status_code sent by the server.
-        response_line_segments = self.response_line.split(' ')
-        self.version = response_line_segments[0]
-        self.status_code = int(response_line_segments[1])
+        response_line_segments = response_line.split(' ')
+        version = response_line_segments[0]
+        status_code = int(response_line_segments[1])
+        return version, status_code
 
     def parse_header(self, header):
         try:
@@ -191,64 +249,68 @@ class HTTPResponse:
             return header_items
         return header_items
 
-    def get_header_by_name(self, key):
+    def get_header_item(self, key):
         if self.header_items is None:
             return None
         return self.header_items.get(key)
 
-    def receive(self, client_sock, file_name):
-        # This function is used by the client to recieve each segment of the response
+    def read_resp_line(self, client_sock):
         response = ''
         while True:
-            buffer = client_sock.recv(1024)
-            response += buffer
-            # Receive until first \r\n is received
-            if '\r\n' in response:
+            buffer = client_sock.recv(1024, socket.MSG_PEEK)
+            if '\r\n' in buffer:
+                index = buffer.index('\r\n')
+                response += buffer[:index]
+                client_sock.recv(index + 2)
                 break
             elif len(buffer) == 0:
                 print 'Remote Socket Closed'
-                break
-                return
+                exit(1)
+            else:
+                client_sock.recv(1024)
+                response += buffer
+        return response
 
-        index = response.index('\r\n')
-        self.response_line = response[:index]
-        self.response_str = self.response_line + self.LINE_SEPARATOR
-        # After the response_line,
-        # the rest of the received response will contain the header and the body
-        response = response[index + 2:]
-        # print self.response_line
+    def read_header(self, client_sock):
+        header = ''
         while True:
-            buffer = client_sock.recv(1024)
-            response += buffer
-            if '\r\n\r\n' in response:
+            buffer = client_sock.recv(1024, socket.MSG_PEEK)
+            if '\r\n\r\n' in buffer:
+                index = buffer.index('\r\n\r\n')
+                header += buffer[:index]
+                client_sock.recv(index + 4)
                 break
             elif len(buffer) == 0:
                 print 'Remote Socket Closed'
-                break
                 return
+            else:
+                client_sock.recv(1024)
+                header += buffer
+        return header
 
-        index = response.index('\r\n\r\n')
-        self.header_items = self.parse_header(response[:index])
-        self.response_str += response[:index] + self.LINE_SEPARATOR * 2
-        response = response[index + 4:]
-
-        file_name = os.path.basename(file_name)
+    def read_body(self, client_sock, file_path=None):
+        response = ''
+        file_name = os.path.basename(file_path)
+        file_path = self.CLIENT_ROOT
+        file_path += file_name
         # Resolve naming conflict.
-        # If file_name = a.txt and it already exists, try 'a (1).txt', 'a (2).txt' and so on.
+        # If file_name = a.txt and it already exists,
+        # try 'a (1).txt', 'a (2).txt' and so on.
         if os.path.exists(self.CLIENT_ROOT + file_name):
             root, ext = os.path.splitext(file_name)
             i = 1
-            while os.path.exists(self.CLIENT_ROOT + root + ' (' + str(i) + ')' + ext):
+            while os.path.exists(file_path):
                 i += 1
-            file_name = root + ' (' + str(i) + ')' + ext
+                file_path = self.CLIENT_ROOT
+                file_path += root + ' (' + str(i) + ')' + ext
 
         # If the file is very big or the file is not text,
         # it is saved as a file and not shown in console.
         # Otherwise, it is just shown in the console.
-        if self.get_header_by_name(self.CONTENT_DISPOSITION) == 'attachment':
-            file_size = int(self.get_header_by_name('Content-Length'))
+        if self.is_attachment(self.header_items):
+            file_size = int(self.get_header_item('Content-Length'))
             downloaded = 0
-            f = open(self.CLIENT_ROOT + file_name, 'w')
+            f = open(file_path, 'w')
             f.write(response)
             f.flush()
             downloaded += len(response)
@@ -263,10 +325,13 @@ class HTTPResponse:
                     break
 
             print '\rDownloading', 100, '%'
-            if int(self.get_header_by_name('Content-Length')) > self.BIG_FILE_SIZE:
-                self.response_str += '<VERY BIG FILE. NOT SHOWN. OPEN ' + file_name + ' TO VIEW>'
+            if int(self.get_header_item('Content-Length')) > self.BIG_FILE_SIZE:
+                self.body = None
+                self.stored_path = file_path
             else:
-                self.response_str += '<NON-Text FILE NOT SHOWN. OPEN ' + file_name + ' TO VIEW>'
+                self.body = None
+                self.stored_path = file_path
+            return None
         else:
             while True:
                 buffer = client_sock.recv(1024)
@@ -274,4 +339,27 @@ class HTTPResponse:
                 if len(buffer) == 0:
                     break
             self.body = response
-            self.response_str += self.body
+            return response
+
+    def receive(self, client_sock, file_path):
+        # This function is used by the client
+        # to recieve each segment of the response
+
+        # First response line is read and parsed.
+        response_line = self.read_resp_line(client_sock)
+        self.version, self.status_code = self.parse_resp_line(response_line)
+        # Then header is read and parsed.
+        header = self.read_header(client_sock)
+        self.header_items = self.parse_header(header)
+        # Finally, body is read.
+        # If attachment, file is stored returned None.
+        self.body = self.read_body(client_sock, file_path)
+
+
+def _read_file(file_path):
+    f = open(file_path, 'r')
+    while True:
+        buffer = f.read(1024)
+        yield buffer
+        if len(buffer) < 1024:
+            break

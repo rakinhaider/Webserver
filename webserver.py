@@ -35,7 +35,7 @@ if __name__ == "__main__":
                 if len(buffer) < 1024:
                     break
 
-            http_request = HTTPRequest(request=request)
+            http_request = HTTPRequest(request_str=request)
             # Preparing a HTTP Response with the request and send the response to the client
             response = HTTPResponse(http_request)
             response.send_response(client_sock)
